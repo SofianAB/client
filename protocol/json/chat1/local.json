@@ -2534,6 +2534,13 @@
           "name": "status"
         },
         {
+          "type": {
+            "type": "array",
+            "items": "ConversationID"
+          },
+          "name": "convIDs"
+        },
+        {
           "type": "boolean",
           "name": "unreadFirst"
         },
