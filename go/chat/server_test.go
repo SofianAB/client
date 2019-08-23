@@ -6959,6 +6959,19 @@ func TestTeamBotSettings(t *testing.T) {
 			})
 			require.NoError(t, err)
 
+			pollForSeqno := func(expectedSeqno keybase1.Seqno) {
+				found := false
+				for !found {
+					select {
+					case teamChange := <-listener.teamChangedByID:
+						found = teamChange.TeamID == team.ID &&
+							teamChange.LatestSeqno == expectedSeqno
+					case <-time.After(20 * time.Second):
+						require.Fail(t, "no event received")
+					}
+				}
+			}
+
 			botSettings := keybase1.TeamBotSettings{
 				Triggers: []string{".*"},
 			}
@@ -6971,6 +6984,7 @@ func TestTeamBotSettings(t *testing.T) {
 				TlfPublic:   false,
 			})
 			require.NoError(t, err)
+			pollForSeqno(3)
 
 			botSettings2 := keybase1.TeamBotSettings{
 				Mentions: true,
@@ -6984,6 +6998,7 @@ func TestTeamBotSettings(t *testing.T) {
 				TlfPublic:   false,
 			})
 			require.NoError(t, err)
+			pollForSeqno(5)
 
 			var unboxed chat1.UIMessage
 			consumeBotMessage := func(botUID *gregor1.UID, msgTyp chat1.MessageType, l *serverChatListener) {
@@ -7138,21 +7153,7 @@ func TestTeamBotSettings(t *testing.T) {
 				botua.Username)
 			require.Equal(t, botSettings, actualBotSettings)
 
-			// wait for the teamchange to propagate
-			found := false
-			for !found {
-				select {
-				case teamChange := <-listener.teamChangedByID:
-					if teamChange.TeamID == team.ID &&
-						teamChange.LatestSeqno == 6 &&
-						teamChange.Changes.Misc &&
-						teamChange.ImplicitTeam == (mt != chat1.ConversationMembersType_TEAM) {
-						found = true
-					}
-				case <-time.After(20 * time.Second):
-					require.Fail(t, "no event received")
-				}
-			}
+			pollForSeqno(6)
 
 			arg = chat1.PostTextNonblockArg{
 				ConversationID:   created.Id,
@@ -7238,13 +7239,14 @@ func TestTeamBotSettings(t *testing.T) {
 			// take out botua2 by upgrading them to BOT
 			err = ctc.as(t, users[0]).chatLocalHandler().EditBotMember(tc.startCtx, chat1.EditBotMemberArg{
 				TlfName:     created.TlfName,
-				Username:    botua.Username,
+				Username:    botua2.Username,
 				Role:        keybase1.TeamRole_BOT,
 				BotSettings: nil,
 				MembersType: mt,
 				TlfPublic:   created.Visibility == keybase1.TLFVisibility_PUBLIC,
 			})
 			require.NoError(t, err)
+			pollForSeqno(7)
 
 			// messages is not keyed for any restricted bot
 			_, err = ctc.as(t, users[0]).chatLocalHandler().PostTextNonblock(tc.startCtx, arg)
