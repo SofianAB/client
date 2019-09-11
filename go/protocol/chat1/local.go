@@ -1659,6 +1659,7 @@ const (
 	OutboxErrorType_TOOMANYATTEMPTS OutboxErrorType = 6
 	OutboxErrorType_ALREADY_DELETED OutboxErrorType = 7
 	OutboxErrorType_UPLOADFAILED    OutboxErrorType = 8
+	OutboxErrorType_RESTRICTEDBOT   OutboxErrorType = 9
 )
 
 func (o OutboxErrorType) DeepCopy() OutboxErrorType { return o }
@@ -1673,6 +1674,7 @@ var OutboxErrorTypeMap = map[string]OutboxErrorType{
 	"TOOMANYATTEMPTS": 6,
 	"ALREADY_DELETED": 7,
 	"UPLOADFAILED":    8,
+	"RESTRICTEDBOT":   9,
 }
 
 var OutboxErrorTypeRevMap = map[OutboxErrorType]string{
@@ -1685,6 +1687,7 @@ var OutboxErrorTypeRevMap = map[OutboxErrorType]string{
 	6: "TOOMANYATTEMPTS",
 	7: "ALREADY_DELETED",
 	8: "UPLOADFAILED",
+	9: "RESTRICTEDBOT",
 }
 
 func (e OutboxErrorType) String() string {
@@ -4163,6 +4166,7 @@ type GetInboxSummaryForCLILocalQuery struct {
 	Before              string                 `codec:"before" json:"before"`
 	Visibility          keybase1.TLFVisibility `codec:"visibility" json:"visibility"`
 	Status              []ConversationStatus   `codec:"status" json:"status"`
+	ConvIDs             []ConversationID       `codec:"convIDs" json:"convIDs"`
 	UnreadFirst         bool                   `codec:"unreadFirst" json:"unreadFirst"`
 	UnreadFirstLimit    UnreadFirstNumLimit    `codec:"unreadFirstLimit" json:"unreadFirstLimit"`
 	ActivitySortedLimit int                    `codec:"activitySortedLimit" json:"activitySortedLimit"`
@@ -4185,6 +4189,17 @@ func (o GetInboxSummaryForCLILocalQuery) DeepCopy() GetInboxSummaryForCLILocalQu
 			}
 			return ret
 		})(o.Status),
+		ConvIDs: (func(x []ConversationID) []ConversationID {
+			if x == nil {
+				return nil
+			}
+			ret := make([]ConversationID, len(x))
+			for i, v := range x {
+				vCopy := v.DeepCopy()
+				ret[i] = vCopy
+			}
+			return ret
+		})(o.ConvIDs),
 		UnreadFirst:         o.UnreadFirst,
 		UnreadFirstLimit:    o.UnreadFirstLimit.DeepCopy(),
 		ActivitySortedLimit: o.ActivitySortedLimit,
@@ -5948,6 +5963,46 @@ type ListBotCommandsLocalArg struct {
 type ClearBotCommandsLocalArg struct {
 }
 
+type AddBotMemberArg struct {
+	TlfName     string                    `codec:"tlfName" json:"tlfName"`
+	Username    string                    `codec:"username" json:"username"`
+	BotSettings *keybase1.TeamBotSettings `codec:"botSettings,omitempty" json:"botSettings,omitempty"`
+	Role        keybase1.TeamRole         `codec:"role" json:"role"`
+	MembersType ConversationMembersType   `codec:"membersType" json:"membersType"`
+	TlfPublic   bool                      `codec:"tlfPublic" json:"tlfPublic"`
+}
+
+type EditBotMemberArg struct {
+	TlfName     string                    `codec:"tlfName" json:"tlfName"`
+	Username    string                    `codec:"username" json:"username"`
+	BotSettings *keybase1.TeamBotSettings `codec:"botSettings,omitempty" json:"botSettings,omitempty"`
+	Role        keybase1.TeamRole         `codec:"role" json:"role"`
+	MembersType ConversationMembersType   `codec:"membersType" json:"membersType"`
+	TlfPublic   bool                      `codec:"tlfPublic" json:"tlfPublic"`
+}
+
+type RemoveBotMemberArg struct {
+	TlfName     string                  `codec:"tlfName" json:"tlfName"`
+	Username    string                  `codec:"username" json:"username"`
+	MembersType ConversationMembersType `codec:"membersType" json:"membersType"`
+	TlfPublic   bool                    `codec:"tlfPublic" json:"tlfPublic"`
+}
+
+type SetBotMemberSettingsArg struct {
+	TlfName     string                   `codec:"tlfName" json:"tlfName"`
+	Username    string                   `codec:"username" json:"username"`
+	BotSettings keybase1.TeamBotSettings `codec:"botSettings" json:"botSettings"`
+	MembersType ConversationMembersType  `codec:"membersType" json:"membersType"`
+	TlfPublic   bool                     `codec:"tlfPublic" json:"tlfPublic"`
+}
+
+type GetBotMemberSettingsArg struct {
+	TlfName     string                  `codec:"tlfName" json:"tlfName"`
+	Username    string                  `codec:"username" json:"username"`
+	MembersType ConversationMembersType `codec:"membersType" json:"membersType"`
+	TlfPublic   bool                    `codec:"tlfPublic" json:"tlfPublic"`
+}
+
 type LocalInterface interface {
 	GetThreadLocal(context.Context, GetThreadLocalArg) (GetThreadLocalRes, error)
 	GetCachedThread(context.Context, GetCachedThreadArg) (GetThreadLocalRes, error)
@@ -6025,6 +6080,11 @@ type LocalInterface interface {
 	AdvertiseBotCommandsLocal(context.Context, AdvertiseBotCommandsLocalArg) (AdvertiseBotCommandsLocalRes, error)
 	ListBotCommandsLocal(context.Context, ConversationID) (ListBotCommandsLocalRes, error)
 	ClearBotCommandsLocal(context.Context) (ClearBotCommandsLocalRes, error)
+	AddBotMember(context.Context, AddBotMemberArg) error
+	EditBotMember(context.Context, EditBotMemberArg) error
+	RemoveBotMember(context.Context, RemoveBotMemberArg) error
+	SetBotMemberSettings(context.Context, SetBotMemberSettingsArg) error
+	GetBotMemberSettings(context.Context, GetBotMemberSettingsArg) (keybase1.TeamBotSettings, error)
 }
 
 func LocalProtocol(i LocalInterface) rpc.Protocol {
@@ -7136,6 +7196,81 @@ func LocalProtocol(i LocalInterface) rpc.Protocol {
 					return
 				},
 			},
+			"addBotMember": {
+				MakeArg: func() interface{} {
+					var ret [1]AddBotMemberArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]AddBotMemberArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]AddBotMemberArg)(nil), args)
+						return
+					}
+					err = i.AddBotMember(ctx, typedArgs[0])
+					return
+				},
+			},
+			"editBotMember": {
+				MakeArg: func() interface{} {
+					var ret [1]EditBotMemberArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]EditBotMemberArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]EditBotMemberArg)(nil), args)
+						return
+					}
+					err = i.EditBotMember(ctx, typedArgs[0])
+					return
+				},
+			},
+			"removeBotMember": {
+				MakeArg: func() interface{} {
+					var ret [1]RemoveBotMemberArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]RemoveBotMemberArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]RemoveBotMemberArg)(nil), args)
+						return
+					}
+					err = i.RemoveBotMember(ctx, typedArgs[0])
+					return
+				},
+			},
+			"setBotMemberSettings": {
+				MakeArg: func() interface{} {
+					var ret [1]SetBotMemberSettingsArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]SetBotMemberSettingsArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]SetBotMemberSettingsArg)(nil), args)
+						return
+					}
+					err = i.SetBotMemberSettings(ctx, typedArgs[0])
+					return
+				},
+			},
+			"getBotMemberSettings": {
+				MakeArg: func() interface{} {
+					var ret [1]GetBotMemberSettingsArg
+					return &ret
+				},
+				Handler: func(ctx context.Context, args interface{}) (ret interface{}, err error) {
+					typedArgs, ok := args.(*[1]GetBotMemberSettingsArg)
+					if !ok {
+						err = rpc.NewTypeError((*[1]GetBotMemberSettingsArg)(nil), args)
+						return
+					}
+					ret, err = i.GetBotMemberSettings(ctx, typedArgs[0])
+					return
+				},
+			},
 		},
 	}
 }
@@ -7536,5 +7671,30 @@ func (c LocalClient) ListBotCommandsLocal(ctx context.Context, convID Conversati
 
 func (c LocalClient) ClearBotCommandsLocal(ctx context.Context) (res ClearBotCommandsLocalRes, err error) {
 	err = c.Cli.Call(ctx, "chat.1.local.clearBotCommandsLocal", []interface{}{ClearBotCommandsLocalArg{}}, &res)
+	return
+}
+
+func (c LocalClient) AddBotMember(ctx context.Context, __arg AddBotMemberArg) (err error) {
+	err = c.Cli.Call(ctx, "chat.1.local.addBotMember", []interface{}{__arg}, nil)
+	return
+}
+
+func (c LocalClient) EditBotMember(ctx context.Context, __arg EditBotMemberArg) (err error) {
+	err = c.Cli.Call(ctx, "chat.1.local.editBotMember", []interface{}{__arg}, nil)
+	return
+}
+
+func (c LocalClient) RemoveBotMember(ctx context.Context, __arg RemoveBotMemberArg) (err error) {
+	err = c.Cli.Call(ctx, "chat.1.local.removeBotMember", []interface{}{__arg}, nil)
+	return
+}
+
+func (c LocalClient) SetBotMemberSettings(ctx context.Context, __arg SetBotMemberSettingsArg) (err error) {
+	err = c.Cli.Call(ctx, "chat.1.local.setBotMemberSettings", []interface{}{__arg}, nil)
+	return
+}
+
+func (c LocalClient) GetBotMemberSettings(ctx context.Context, __arg GetBotMemberSettingsArg) (res keybase1.TeamBotSettings, err error) {
+	err = c.Cli.Call(ctx, "chat.1.local.getBotMemberSettings", []interface{}{__arg}, &res)
 	return
 }
